@@ -8,6 +8,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
+# for testing only
+import matplotlib.pyplot as plt
+
+
 #####################
 # MODELS FOR PART 1 #
 #####################
@@ -108,12 +112,14 @@ class UniformLanguageModel(LanguageModel):
         return np.log(1.0/self.voc_size) * len(next_chars)
 
 
-# inherits the language model
-class RNNLanguageModel(LanguageModel):
+# inherits the language model (nn)
+class RNNLanguageModel(LanguageModel, nn.Module): 
     
     # initilaize the model with the embedding layer
     def __init__(self, vocab_size, embedding_dim, hidden_dim, vocab_index):
-        super().__init__()
+        # super().__init__()
+        super(RNNLanguageModel, self).__init__()  # Initialize nn.Module
+
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.rnn = nn.RNN(embedding_dim, hidden_dim, batch_first=True)
         self.output_layer = nn.Linear(hidden_dim, vocab_size)
@@ -196,6 +202,10 @@ def train_lm(args, train_text, dev_text, vocab_index):
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     model.train()
+
+    loss_values = []  # to store loss values for plotting via matplotlib
+
+
     for epoch in range(num_epochs):
         total_loss = 0
         for batch_inputs, batch_targets in dataloader:
@@ -207,6 +217,26 @@ def train_lm(args, train_text, dev_text, vocab_index):
             total_loss += loss.item()
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_loss / len(dataloader)}")
 
+
+        # additional for testing don't add for the final submission
+        # calculating average loss for the epoch
+        avg_loss = total_loss / len(dataloader)
+        loss_values.append(avg_loss)  # storing the average loss for the epoch
+        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss}")
+
+    # Plotting the loss values
+    plt.figure(figsize=(8, 5))
+    plt.plot(range(1, num_epochs + 1), loss_values, marker='o', linestyle='-', color='b', label='Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training Loss Over Epochs')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    # testing finishes here
+
+
     # evaluate on the development set
     model.eval()
     # avg log prob gives a measurement of the model's confidence in its prediction
@@ -215,4 +245,25 @@ def train_lm(args, train_text, dev_text, vocab_index):
     print(f"Development set perplexity: {dev_perplexity}")
 
     return model
+
+
+    # key points
+    # when the training loss reduces gradually it indicates that the model is learning
+    # lower the perplexity indicates better performance in the model
+    # (tells as it is learned a resonable degree of language strucuture)
+    # in log prob metrices
+    # higher the log porb (less negative) indicates better model confidence
+    # avg log prob -> models assigns as the log prob for each character on average 
+    # perplexity -> if the value matches the dev set perplexity, it 
+    #                confirms the model consistency
+
+    # ------------------------------
+    # To run the part 2 and test
+    # python lm.py --model RNN
+    # -------------------------------
+
+    # do this to improve
+    # 1. increase the model complexity -> change (+) embedding_dim/ hidden_dim
+    # 2. more training epochs -> make sure not to overtrain/ n memorizes the data
+    # 3. tune with hyper parameters (change learning rate(l) or use different optimizers)
 
