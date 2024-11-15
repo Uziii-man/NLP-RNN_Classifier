@@ -1,0 +1,16 @@
+Test Set	Embedding Dim	Hidden Dim	Epochs	Learning Rate	Optimizer
+1	            32	            64	        15	    0.001	        Adam
+2	            64	            128	        20	    0.0005	        Adam
+3	            32	            64	        10	    0.005	        Adam
+4	            16	            32	        30	    0.0001	        AdamW
+5	            128	            256	        25	    0.001	    SGD with Momentum
+6               32              64          25      0.001       SGD with Momentum   - good
+7               128             256         25      0.01            Adam            - so bad
+8               128             256         25      0.001           Adam
+9               128             256         10      0.001           Adam
+10              64              128         10      0.001           Adam
+11              32              64          10      0.001           Adam
+12              32              64          15      0.001           Adam
+13              32              64          15      0.0001          Adam            - good
+
+torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
