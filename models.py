@@ -77,30 +77,33 @@ def train_frequency_based_classifier(cons_exs, vowel_exs):
     return FrequencyBasedClassifier(consonant_counts, vowel_counts)
 
 
+
 def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index):
+    # Defining parameters 
     embedding_size = 40
     hidden_size = 25
     output_size = 2
-    batch_size = 32
+    batch_size = 16
     learning_rate = 0.001
-    epochs = 15
+    epochs = 10
 
     print("Embedding Size:", embedding_size)
     print("Hidden Size:", hidden_size)
 
+    # Initialising the model,loss functions as well as the optimiser. 
     model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # Prepare training and dev data as tensors
-    train_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0))
+    train_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
                   for ex in train_cons_exs] + \
-                 [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1))
+                 [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
                   for ex in train_vowel_exs]
 
-    dev_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0))
+    dev_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
                 for ex in dev_cons_exs] + \
-               [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1))
+               [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
                 for ex in dev_vowel_exs]
 
     # Function to create mini-batches
@@ -108,6 +111,10 @@ def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, de
         random.shuffle(data)  # Shuffle data for each epoch
         batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
         return batches
+    
+    train_losses = []
+    train_accuracies = []
+    dev_accuracies = []
 
     for epoch in range(epochs):
         model.train()
@@ -118,15 +125,15 @@ def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, de
         train_batches = create_batches(train_data, batch_size)
 
         for batch in train_batches:
-            input_sequences = [item[0] for item in batch]  # Extract sequences
-            labels = torch.stack([item[1] for item in batch])  # Extract labels and stack them
+            input_sequences = [item[0] for item in batch]  
+            labels = torch.stack([item[1] for item in batch])  
             input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
 
             optimizer.zero_grad()
             output = model(input_sequences)
             loss = criterion(output, labels)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  
             optimizer.step()
 
             total_loss += loss.item()
@@ -134,6 +141,9 @@ def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, de
 
         avg_train_loss = total_loss / len(train_batches)
         train_accuracy = correct_train_predictions / len(train_data) * 100
+
+        train_losses.append(avg_train_loss)
+        train_accuracies.append(train_accuracy)
 
         # Evaluate on dev set
         model.eval()
@@ -150,10 +160,174 @@ def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, de
                 correct_dev_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
 
         dev_accuracy = correct_dev_predictions / len(dev_data) * 100
+        dev_accuracies.append(dev_accuracy)
+        
         print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_train_loss:.4f}, "
               f"Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%")
+        
+
+    # Plot training loss
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, epochs + 1), train_losses, label="Training Loss", marker="o")
+    plt.title("Training Loss Over Epochs")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+    # Plot training and dev accuracy
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, epochs + 1), train_accuracies, label="Training Accuracy", marker="o")
+    plt.plot(range(1, epochs + 1), dev_accuracies, label="Dev Accuracy", marker="o")
+    plt.title("Accuracy Over Epochs")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy (%)")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
 
     return model
+
+
+
+
+
+# 
+""" QUESTION 2 """
+# def train_rnn_classifier(
+#     args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index, max_context_length=20
+# ):
+#     embedding_size = 40
+#     hidden_size = 25
+#     output_size = 2
+#     batch_size = 32
+#     learning_rate = 0.001
+#     epochs = 15
+
+#     print("Embedding Size:", embedding_size)
+#     print("Hidden Size:", hidden_size)
+
+#     # To store accuracy for each context length
+#     context_results = {}
+
+#     for context_length in range(1, max_context_length + 1):
+#         print(f"\nEvaluating context length: {context_length}")
+        
+#         model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
+#         criterion = nn.CrossEntropyLoss()
+#         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+#         # Prepare training and dev data with truncated context
+#         train_data = [
+#             (
+#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+#                 torch.tensor(0),
+#             )
+#             for ex in train_cons_exs
+#         ] + [
+#             (
+#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+#                 torch.tensor(1),
+#             )
+#             for ex in train_vowel_exs
+#         ]
+
+#         dev_data = [
+#             (
+#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+#                 torch.tensor(0),
+#             )
+#             for ex in dev_cons_exs
+#         ] + [
+#             (
+#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+#                 torch.tensor(1),
+#             )
+#             for ex in dev_vowel_exs
+#         ]
+
+#         # Function to create mini-batches
+#         def create_batches(data, batch_size):
+#             random.shuffle(data)  # Shuffle data for each epoch
+#             return [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
+
+#         for epoch in range(epochs):
+#             model.train()
+#             total_loss = 0
+#             correct_train_predictions = 0
+
+#             # Create mini-batches for training
+#             train_batches = create_batches(train_data, batch_size)
+
+#             for batch in train_batches:
+#                 input_sequences = [item[0] for item in batch]  # Extract sequences
+#                 labels = torch.stack([item[1] for item in batch])  # Extract labels and stack them
+#                 input_sequences = torch.nn.utils.rnn.pad_sequence(
+#                     input_sequences, batch_first=True, padding_value=0
+#                 )  # Pad sequences
+
+#                 optimizer.zero_grad()
+#                 output = model(input_sequences)
+#                 loss = criterion(output, labels)
+#                 loss.backward()
+#                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
+#                 optimizer.step()
+
+#                 total_loss += loss.item()
+#                 correct_train_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+#         train_accuracy = correct_train_predictions / len(train_data) * 100
+
+#         # Evaluate on dev set
+#         model.eval()
+#         correct_dev_predictions = 0
+#         dev_batches = create_batches(dev_data, batch_size)
+
+#         with torch.no_grad():
+#             for batch in dev_batches:
+#                 input_sequences = [item[0] for item in batch]
+#                 labels = torch.stack([item[1] for item in batch])
+#                 input_sequences = torch.nn.utils.rnn.pad_sequence(
+#                     input_sequences, batch_first=True, padding_value=0
+#                 )  # Pad sequences
+
+#                 output = model(input_sequences)
+#                 correct_dev_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+#         dev_accuracy = correct_dev_predictions / len(dev_data) * 100
+#         print(
+#             f"Context Length: {context_length}, Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%"
+#         )
+
+#         # Store results for the context length
+#         context_results[context_length] = {
+#             "train_accuracy": train_accuracy,
+#             "dev_accuracy": dev_accuracy,
+#         }
+
+#     # Plot the results
+#     context_lengths = list(context_results.keys())
+#     train_accuracies = [context_results[cl]["train_accuracy"] for cl in context_lengths]
+#     dev_accuracies = [context_results[cl]["dev_accuracy"] for cl in context_lengths]
+
+#     plt.figure(figsize=(10, 6))
+#     plt.plot(context_lengths, train_accuracies, label="Train Accuracy", marker="o")
+#     plt.plot(context_lengths, dev_accuracies, label="Dev Accuracy", marker="o")
+#     plt.title("Accuracy vs. Context Length")
+#     plt.xlabel("Context Length")
+#     plt.ylabel("Accuracy (%)")
+#     plt.legend()
+#     plt.grid(True)
+#     plt.show()
+
+#     # Return the trained model (for the last context length) and context results
+#     return model, context_results
+
+
+
+
+
 
 
 #####################
@@ -208,7 +382,60 @@ class RNNLanguageModel(LanguageModel, nn.Module):
         return log_prob_sum
 
 
-def train_lm(args, train_text, dev_text, vocab_index):
+# def train_lm(args, train_text, dev_text, vocab_index):
+#     vocab_size = len(vocab_index)
+#     embedding_dim = 32
+#     hidden_dim = 64
+#     model = RNNLanguageModel(vocab_size, embedding_dim, hidden_dim, vocab_index)
+#     optimizer = optim.Adam(model.parameters(), lr=0.001)
+#     criterion = nn.CrossEntropyLoss()
+
+#     train_indices = [vocab_index.index_of(c) for c in train_text]
+#     inputs = torch.tensor(train_indices[:-1], dtype=torch.long)
+#     targets = torch.tensor(train_indices[1:], dtype=torch.long)
+
+#     num_epochs = 8
+#     batch_size = 32
+#     dataset = TensorDataset(inputs, targets)
+#     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+#     loss_values = []  # to store loss values for plotting via matplotlib
+
+#     model.train()
+#     for epoch in range(num_epochs):
+#         total_loss = 0
+#         for batch_inputs, batch_targets in dataloader:
+#             optimizer.zero_grad()
+#             output = model(batch_inputs.unsqueeze(0))  # Add batch dimension
+#             loss = criterion(output.view(-1, vocab_size), batch_targets)
+#             loss.backward()
+#             optimizer.step()
+#             total_loss += loss.item()
+#         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_loss / len(dataloader)}")
+
+#         # calculating average loss for the epoch
+#         avg_loss = total_loss / len(dataloader)
+#         loss_values.append(avg_loss)  # storing the average loss for the epoch
+
+#     # Plotting the loss values
+#     plt.figure(figsize=(8, 5))
+#     plt.plot(range(1, num_epochs + 1), loss_values, marker='o', linestyle='-', color='b', label='Training Loss')
+#     plt.xlabel('Epoch')
+#     plt.ylabel('Loss')
+#     plt.title('Training Loss Over Epochs')
+#     plt.legend()
+#     plt.grid(True)
+#     plt.show()
+
+#     model.eval()
+#     dev_log_prob = model.get_log_prob_sequence(dev_text, context=" ")
+#     dev_perplexity = np.exp(-dev_log_prob / len(dev_text))
+#     print(f"Development set perplexity: {dev_perplexity}")
+
+#     return model
+
+
+def train_lm(args, train_text, dev_text, vocab_index, test_text=None):
     vocab_size = len(vocab_index)
     embedding_dim = 32
     hidden_dim = 64
@@ -216,32 +443,89 @@ def train_lm(args, train_text, dev_text, vocab_index):
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
 
+    # Prepare training data
     train_indices = [vocab_index.index_of(c) for c in train_text]
-    inputs = torch.tensor(train_indices[:-1], dtype=torch.long)
-    targets = torch.tensor(train_indices[1:], dtype=torch.long)
+    train_inputs = torch.tensor(train_indices[:-1], dtype=torch.long)
+    train_targets = torch.tensor(train_indices[1:], dtype=torch.long)
 
-    num_epochs = 5
+    # Prepare validation data
+    dev_indices = [vocab_index.index_of(c) for c in dev_text]
+    dev_inputs = torch.tensor(dev_indices[:-1], dtype=torch.long)
+    dev_targets = torch.tensor(dev_indices[1:], dtype=torch.long)
+
+    num_epochs = 8
     batch_size = 32
-    dataset = TensorDataset(inputs, targets)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    train_dataset = TensorDataset(train_inputs, train_targets)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    model.train()
+    # Lists to store loss and perplexity values
+    train_loss_values = []
+    dev_loss_values = []
+    dev_perplexities = []
+
     for epoch in range(num_epochs):
-        total_loss = 0
-        for batch_inputs, batch_targets in dataloader:
+        model.train()
+        total_train_loss = 0
+        for batch_inputs, batch_targets in train_dataloader:
             optimizer.zero_grad()
-            output = model(batch_inputs.unsqueeze(0))  # Add batch dimension
-            loss = criterion(output.view(-1, vocab_size), batch_targets)
+            outputs = model(batch_inputs.unsqueeze(0))
+            loss = criterion(outputs.view(-1, vocab_size), batch_targets)
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
-        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_loss / len(dataloader)}")
+            total_train_loss += loss.item()
+        avg_train_loss = total_train_loss / len(train_dataloader)
+        train_loss_values.append(avg_train_loss)
+        print(f"Epoch {epoch + 1}/{num_epochs}, Training Loss: {avg_train_loss:.4f}")
 
-    model.eval()
-    dev_log_prob = model.get_log_prob_sequence(dev_text, context=" ")
-    dev_perplexity = np.exp(-dev_log_prob / len(dev_text))
-    print(f"Development set perplexity: {dev_perplexity}")
+        # Evaluate on validation set
+        model.eval()
+        with torch.no_grad():
+            outputs = model(dev_inputs.unsqueeze(0))
+            dev_loss = criterion(outputs.view(-1, vocab_size), dev_targets)
+            dev_loss_values.append(dev_loss.item())
+
+            # Calculate perplexity
+            dev_log_prob = model.get_log_prob_sequence(dev_text, context=" ")
+            dev_perplexity = np.exp(-dev_log_prob / len(dev_text))
+            dev_perplexities.append(dev_perplexity)
+        print(f"Epoch {epoch + 1}/{num_epochs}, Validation Loss: {dev_loss.item():.4f}, Perplexity: {dev_perplexity:.4f}")
+
+    # Plotting the loss values
+    plt.figure(figsize=(8, 5))
+    epochs = range(1, num_epochs + 1)
+    plt.plot(epochs, train_loss_values, marker='o', linestyle='-', color='b', label='Training Loss')
+    plt.plot(epochs, dev_loss_values, marker='o', linestyle='-', color='r', label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss Over Epochs')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    # Plotting the perplexity values
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, dev_perplexities, marker='o', linestyle='-', color='g', label='Validation Perplexity')
+    plt.xlabel('Epoch')
+    plt.ylabel('Perplexity')
+    plt.title('Validation Perplexity Over Epochs')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    # Testing the model if test_text is provided
+    if test_text is not None:
+        test_indices = [vocab_index.index_of(c) for c in test_text]
+        test_inputs = torch.tensor(test_indices[:-1], dtype=torch.long)
+        test_targets = torch.tensor(test_indices[1:], dtype=torch.long)
+
+        model.eval()
+        with torch.no_grad():
+            outputs = model(test_inputs.unsqueeze(0))
+            test_loss = criterion(outputs.view(-1, vocab_size), test_targets)
+            test_log_prob = model.get_log_prob_sequence(test_text, context=" ")
+            test_perplexity = np.exp(-test_log_prob / len(test_text))
+        print(f"Test Loss: {test_loss.item():.4f}, Test Perplexity: {test_perplexity:.4f}")
+    else:
+        print("No test data provided. Skipping testing phase.")
 
     return model
-
-
