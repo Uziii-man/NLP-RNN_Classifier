@@ -2,15 +2,18 @@
 
 import numpy as np
 import collections
+import numpy as np
+import collections
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
+import torch.optim as optim
+import random
+
 from torch.utils.data import DataLoader, TensorDataset
 
 # for testing only
 import matplotlib.pyplot as plt
-
 
 #####################
 # MODELS FOR PART 1 #
@@ -41,10 +44,31 @@ class FrequencyBasedClassifier(ConsonantVowelClassifier):
         else:
             return 1
 
-
-class RNNClassifier(ConsonantVowelClassifier):
-    def predict(self, context):
-        raise Exception("Implement me")
+class RNNClassifier(ConsonantVowelClassifier, nn.Module):
+    def __init__(self, vocab_index, embedding_size, hidden_size, output_size):
+        # Initialize both parent classes
+        ConsonantVowelClassifier.__init__(self)
+        nn.Module.__init__(self)
+ 
+        self.vocab_index = vocab_index
+        self.embedding = nn.Embedding(len(vocab_index), embedding_size)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+ 
+    def forward(self, input_sequence):
+        # Embedding and LSTM
+        seq_embedding = self.embedding(input_sequence)  # [batch_size, seq_len, embedding_size]
+        _, (hidden, _) = self.rnn(seq_embedding)  # hidden: [1, batch_size, hidden_size]
+ 
+        logits = self.fc(hidden.squeeze(0))  # [batch_size, output_size]
+        return F.log_softmax(logits, dim=1)
+ 
+    def predict(self, input_sequence):
+        with torch.no_grad():
+            input_indices = [self.vocab_index.index_of(char) for char in input_sequence]
+            input_tensor = torch.tensor(input_indices, dtype=torch.long).unsqueeze(0)  # Add batch dimension
+            output = self.forward(input_tensor)
+            return torch.argmax(output, dim=1).item()
 
 
 def train_frequency_based_classifier(cons_exs, vowel_exs):
@@ -58,16 +82,83 @@ def train_frequency_based_classifier(cons_exs, vowel_exs):
 
 
 def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index):
-    """
-    :param args: command-line args, passed through here for your convenience
-    :param train_cons_exs: list of strings followed by consonants
-    :param train_vowel_exs: list of strings followed by vowels
-    :param dev_cons_exs: list of strings followed by consonants
-    :param dev_vowel_exs: list of strings followed by vowels
-    :param vocab_index: an Indexer of the character vocabulary (27 characters)
-    :return: an RNNClassifier instance trained on the given data
-    """
-    raise Exception("Implement me")
+    embedding_size = 40
+    hidden_size = 25
+    output_size = 2
+    batch_size = 32
+    learning_rate = 0.001
+    epochs = 15
+
+    print("Embedding Size:", embedding_size)
+    print("Hidden Size:", hidden_size)
+
+    model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Prepare training and dev data as tensors
+    train_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
+                  for ex in train_cons_exs] + \
+                 [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
+                  for ex in train_vowel_exs]
+
+    dev_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
+                for ex in dev_cons_exs] + \
+               [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
+                for ex in dev_vowel_exs]
+
+    # Function to create mini-batches
+    def create_batches(data, batch_size):
+        random.shuffle(data)  # Shuffle data for each epoch
+        batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+        return batches
+
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        correct_train_predictions = 0
+
+        # Create mini-batches for training
+        train_batches = create_batches(train_data, batch_size)
+
+        for batch in train_batches:
+            input_sequences = [item[0] for item in batch]  # Extract sequences
+            labels = torch.stack([item[1] for item in batch])  # Extract labels and stack them
+            input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
+
+            optimizer.zero_grad()
+            output = model(input_sequences)
+            loss = criterion(output, labels)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
+            optimizer.step()
+
+            total_loss += loss.item()
+            correct_train_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+        avg_train_loss = total_loss / len(train_batches)
+        train_accuracy = correct_train_predictions / len(train_data) * 100
+
+        # Evaluate on dev set
+        model.eval()
+        correct_dev_predictions = 0
+        dev_batches = create_batches(dev_data, batch_size)
+
+        with torch.no_grad():
+            for batch in dev_batches:
+                input_sequences = [item[0] for item in batch]
+                labels = torch.stack([item[1] for item in batch])
+                input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
+
+                output = model(input_sequences)
+                correct_dev_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+        dev_accuracy = correct_dev_predictions / len(dev_data) * 100
+        print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_train_loss:.4f}, "
+              f"Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%")
+
+    return model
+
 
 
 #####################
