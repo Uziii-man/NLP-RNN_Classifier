@@ -17,7 +17,7 @@ def _parse_args():
     :return: the parsed args bundle
     """
     parser = argparse.ArgumentParser(description='lm.py')
-    parser.add_argument('--model', type=str, default='RNN', help='model to run (FREQUENCY or RNN)')
+    parser.add_argument('--model', type=str, default='FREQUENCY', help='model to run (FREQUENCY or RNN)')
     parser.add_argument('--train_cons', type=str, default='data/train-consonant-examples.txt', help='path to train consonant examples')
     parser.add_argument('--train_vowel', type=str, default='data/train-vowel-examples.txt', help='path to train vowel examples')
     parser.add_argument('--dev_cons', type=str, default='data/dev-consonant-examples.txt', help='path to dev consonant examples')
