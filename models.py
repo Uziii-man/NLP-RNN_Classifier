@@ -339,6 +339,26 @@ def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, de
 # MODELS FOR PART 2 #
 #####################
 
+# Define the special start-of-sequence token
+# SOS_TOKEN = "<s>"
+
+# Update your VocabularyIndex class to include the SOS token
+# class VocabularyIndex:
+#     def __init__(self, chars):
+#         self.chars = [SOS_TOKEN] + sorted(set(chars))  # Add SOS token at the beginning
+#         self.char2idx = {char: idx for idx, char in enumerate(self.chars)}
+#         self.idx2char = {idx: char for idx, char in enumerate(self.chars)}
+
+#     def index_of(self, char):
+#         return self.char2idx[char]
+
+#     def char_at(self, idx):
+#         return self.idx2char[idx]
+
+#     def __len__(self):
+#         return len(self.chars)
+
+
 class LanguageModel(object):
     def get_log_prob_single(self, next_char, context):
         raise Exception("Only implemented in subclasses")
