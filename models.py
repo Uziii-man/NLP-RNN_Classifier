@@ -40,12 +40,37 @@ class FrequencyBasedClassifier(ConsonantVowelClassifier):
             return 1
 
 
-class RNNClassifier(ConsonantVowelClassifier):
-    def predict(self, context):
-        raise Exception("Implement me")
+# For rnn classifier
+class RNNClassifier(ConsonantVowelClassifier, nn.Module):
+    def __init__(self, vocab_index, embedding_size, hidden_size, output_size):
+        # Initialize both parent classes
+        ConsonantVowelClassifier.__init__(self)
+        nn.Module.__init__(self)
+
+        self.vocab_index = vocab_index
+        self.embedding = nn.Embedding(len(vocab_index), embedding_size)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, input_sequence):
+        # Embedding and LSTM
+        seq_embedding = self.embedding(input_sequence)  # [batch_size, seq_len, embedding_size]
+        _, (hidden, _) = self.rnn(seq_embedding)  # hidden: [1, batch_size, hidden_size]
+
+        logits = self.fc(hidden.squeeze(0))  # [batch_size, output_size]
+        return F.log_softmax(logits, dim=1)
+
+    def predict(self, input_sequence):
+        # Convert input sequence to tensor
+        with torch.no_grad():
+            input_indices = [self.vocab_index.index_of(char) for char in input_sequence]
+            input_tensor = torch.tensor(input_indices, dtype=torch.long).unsqueeze(0)  # Add batch dimension
+            output = self.forward(input_tensor)
+            return torch.argmax(output, dim=1).item()
 
 
 def train_frequency_based_classifier(cons_exs, vowel_exs):
+    # Count the occurrences of each letter after the space for consonants and vowels
     consonant_counts = collections.Counter()
     vowel_counts = collections.Counter()
     for ex in cons_exs:
@@ -56,16 +81,258 @@ def train_frequency_based_classifier(cons_exs, vowel_exs):
 
 
 def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index):
-    """
-    :param args: command-line args, passed through here for your convenience
-    :param train_cons_exs: list of strings followed by consonants
-    :param train_vowel_exs: list of strings followed by vowels
-    :param dev_cons_exs: list of strings followed by consonants
-    :param dev_vowel_exs: list of strings followed by vowels
-    :param vocab_index: an Indexer of the character vocabulary (27 characters)
-    :return: an RNNClassifier instance trained on the given data
-    """
-    raise Exception("Implement me")
+    # Define hyperparameters/parameters
+    embedding_size = 40
+    hidden_size = 25
+    output_size = 2
+    batch_size = 16
+    learning_rate = 0.001
+    epochs = 10
+
+    print("Embedding Size:", embedding_size)
+    print("Hidden Size:", hidden_size)
+
+    # Initialising the model,loss functions as well as the optimiser. 
+    model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Prepare training and dev data as tensors
+    train_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
+                  for ex in train_cons_exs] + \
+                 [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
+                  for ex in train_vowel_exs]
+
+    dev_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
+                for ex in dev_cons_exs] + \
+               [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
+                for ex in dev_vowel_exs]
+
+    # Function to create mini-batches
+    def create_batches(data, batch_size):
+        random.shuffle(data)  # Shuffle data for each epoch
+        batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+        return batches
+    
+    train_losses = []
+    train_accuracies = []
+    dev_accuracies = []
+
+    # Training the model
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        correct_train_predictions = 0
+
+        # Create mini-batches for training
+        train_batches = create_batches(train_data, batch_size)
+
+        for batch in train_batches:
+            # Extract sequences and labels
+            input_sequences = [item[0] for item in batch]  
+            labels = torch.stack([item[1] for item in batch])  
+            # Pad sequences to have the same length
+            input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
+
+            # Forward pass
+            # Zero the gradients used to update the weights
+            optimizer.zero_grad()
+            output = model(input_sequences)
+            loss = criterion(output, labels)
+
+            # Backward pass
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  
+            optimizer.step()
+
+            # Calculate loss and accuracy
+            total_loss += loss.item()
+            correct_train_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+        avg_train_loss = total_loss / len(train_batches)
+        train_accuracy = correct_train_predictions / len(train_data) * 100
+
+        train_losses.append(avg_train_loss)
+        train_accuracies.append(train_accuracy)
+
+        # Evaluate on dev set
+        model.eval()
+        correct_dev_predictions = 0
+        dev_batches = create_batches(dev_data, batch_size)
+
+        # Calculate accuracy on dev set
+        with torch.no_grad():
+            for batch in dev_batches:
+                input_sequences = [item[0] for item in batch]
+                labels = torch.stack([item[1] for item in batch])
+                input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
+
+                output = model(input_sequences)
+                correct_dev_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+        dev_accuracy = correct_dev_predictions / len(dev_data) * 100
+        dev_accuracies.append(dev_accuracy)
+        
+        print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_train_loss:.4f}, "
+              f"Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%")
+        
+
+    # Plot training loss
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, epochs + 1), train_losses, label="Training Loss", marker="o")
+    plt.title("Training Loss Over Epochs")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+    # Plot training and dev accuracy
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, epochs + 1), train_accuracies, label="Training Accuracy", marker="o")
+    plt.plot(range(1, epochs + 1), dev_accuracies, label="Dev Accuracy", marker="o")
+    plt.title("Accuracy Over Epochs")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy (%)")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+    return model
+
+
+# 
+""" QUESTION 2 """
+# def train_rnn_classifier(
+#     args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index, max_context_length=20
+# ):
+#     embedding_size = 40
+#     hidden_size = 25
+#     output_size = 2
+#     batch_size = 32
+#     learning_rate = 0.001
+#     epochs = 15
+
+#     print("Embedding Size:", embedding_size)
+#     print("Hidden Size:", hidden_size)
+
+#     # To store accuracy for each context length
+#     context_results = {}
+
+#     for context_length in range(1, max_context_length + 1):
+#         print(f"\nEvaluating context length: {context_length}")
+        
+#         model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
+#         criterion = nn.CrossEntropyLoss()
+#         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+#         # Prepare training and dev data with truncated context
+#         train_data = [
+#             (
+#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+#                 torch.tensor(0),
+#             )
+#             for ex in train_cons_exs
+#         ] + [
+#             (
+#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+#                 torch.tensor(1),
+#             )
+#             for ex in train_vowel_exs
+#         ]
+
+#         dev_data = [
+#             (
+#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+#                 torch.tensor(0),
+#             )
+#             for ex in dev_cons_exs
+#         ] + [
+#             (
+#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+#                 torch.tensor(1),
+#             )
+#             for ex in dev_vowel_exs
+#         ]
+
+#         # Function to create mini-batches
+#         def create_batches(data, batch_size):
+#             random.shuffle(data)  # Shuffle data for each epoch
+#             return [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
+
+#         for epoch in range(epochs):
+#             model.train()
+#             total_loss = 0
+#             correct_train_predictions = 0
+
+#             # Create mini-batches for training
+#             train_batches = create_batches(train_data, batch_size)
+
+#             for batch in train_batches:
+#                 input_sequences = [item[0] for item in batch]  # Extract sequences
+#                 labels = torch.stack([item[1] for item in batch])  # Extract labels and stack them
+#                 input_sequences = torch.nn.utils.rnn.pad_sequence(
+#                     input_sequences, batch_first=True, padding_value=0
+#                 )  # Pad sequences
+
+#                 optimizer.zero_grad()
+#                 output = model(input_sequences)
+#                 loss = criterion(output, labels)
+#                 loss.backward()
+#                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
+#                 optimizer.step()
+
+#                 total_loss += loss.item()
+#                 correct_train_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+#         train_accuracy = correct_train_predictions / len(train_data) * 100
+
+#         # Evaluate on dev set
+#         model.eval()
+#         correct_dev_predictions = 0
+#         dev_batches = create_batches(dev_data, batch_size)
+
+#         with torch.no_grad():
+#             for batch in dev_batches:
+#                 input_sequences = [item[0] for item in batch]
+#                 labels = torch.stack([item[1] for item in batch])
+#                 input_sequences = torch.nn.utils.rnn.pad_sequence(
+#                     input_sequences, batch_first=True, padding_value=0
+#                 )  # Pad sequences
+
+#                 output = model(input_sequences)
+#                 correct_dev_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+#         dev_accuracy = correct_dev_predictions / len(dev_data) * 100
+#         print(
+#             f"Context Length: {context_length}, Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%"
+#         )
+
+#         # Store results for the context length
+#         context_results[context_length] = {
+#             "train_accuracy": train_accuracy,
+#             "dev_accuracy": dev_accuracy,
+#         }
+
+#     # Plot the results
+#     context_lengths = list(context_results.keys())
+#     train_accuracies = [context_results[cl]["train_accuracy"] for cl in context_lengths]
+#     dev_accuracies = [context_results[cl]["dev_accuracy"] for cl in context_lengths]
+
+#     plt.figure(figsize=(10, 6))
+#     plt.plot(context_lengths, train_accuracies, label="Train Accuracy", marker="o")
+#     plt.plot(context_lengths, dev_accuracies, label="Dev Accuracy", marker="o")
+#     plt.title("Accuracy vs. Context Length")
+#     plt.xlabel("Context Length")
+#     plt.ylabel("Accuracy (%)")
+#     plt.legend()
+#     plt.grid(True)
+#     plt.show()
+
+#     # Return the trained model (for the last context length) and context results
+#     return model, context_results
+
+
 
 
 #####################
@@ -94,16 +361,17 @@ class UniformLanguageModel(LanguageModel):
     def get_log_prob_sequence(self, next_chars, context):
         return np.log(1.0 / self.voc_size) * len(next_chars)
 
+
 # RNN language model
 class RNNLanguageModel(LanguageModel, nn.Module): 
     # Initialize the RNN language model with the vocabulary size, embedding dimension, hidden dimension, and vocabulary index
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, vocab_index, sos_token="<sos>"):
-        super(RNNLanguageModel, self).__init__()
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, vocab_index):
+        # Initialize the parent classes
+        super(RNNLanguageModel, self).__init__()  # Initialize nn.Module
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.rnn = nn.RNN(embedding_dim, hidden_dim, batch_first=True)
         self.output_layer = nn.Linear(hidden_dim, vocab_size)
         self.vocab_index = vocab_index
-        self.sos_token = sos_token  # Store the SOS token
 
     # Forward pass of the RNN language model
     def forward(self, input_seq):
@@ -130,27 +398,98 @@ class RNNLanguageModel(LanguageModel, nn.Module):
             log_prob_sum += self.get_log_prob_single(full_context[len(context) + i], full_context[:len(context) + i])
         return log_prob_sum
 
+
+# def train_lm(args, train_text, dev_text, vocab_index):
+#     vocab_size = len(vocab_index)
+#     embedding_dim = 32
+#     hidden_dim = 64
+#     model = RNNLanguageModel(vocab_size, embedding_dim, hidden_dim, vocab_index)
+#     optimizer = optim.Adam(model.parameters(), lr=0.001)
+#     criterion = nn.CrossEntropyLoss()
+
+#    # Add SOS token to the vocabulary
+#    # Uncomment the following lines to enable SOS token handling
+#    # --------------------------------------
+#    # if '<sos>' not in vocab_index.objs_to_ints:
+#    #     vocab_index.add_and_get_index('<sos>')
+#    # sos_idx = vocab_index.index_of('<sos>')
+#    # --------------------------------------
+
+#     train_indices = [vocab_index.index_of(c) for c in train_text]
+#    # Uncomment to prepend SOS token
+#    # --------------------------------------
+#    # train_indices = [sos_idx] + train_indices
+#    # --------------------------------------
+#     inputs = torch.tensor(train_indices[:-1], dtype=torch.long)
+#     targets = torch.tensor(train_indices[1:], dtype=torch.long)
+
+#     num_epochs = 8
+#     batch_size = 32
+#     dataset = TensorDataset(inputs, targets)
+#     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+#     model.train()
+#     for epoch in range(num_epochs):
+#         total_loss = 0
+#         for batch_inputs, batch_targets in dataloader:
+#             optimizer.zero_grad()
+#             output = model(batch_inputs.unsqueeze(0))  # Add batch dimension
+#             loss = criterion(output.view(-1, vocab_size), batch_targets)
+#             loss.backward()
+#             optimizer.step()
+#             total_loss += loss.item()
+#         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {total_loss / len(dataloader)}")
+
+#     model.eval()
+#     dev_log_prob = model.get_log_prob_sequence(dev_text, context=" ")
+#     dev_perplexity = np.exp(-dev_log_prob / len(dev_text))
+#     print(f"Development set perplexity: {dev_perplexity}")
+
+#     return model
+
+
 # Train the language model using the training text and evaluate on the development text
 def train_lm(args, train_text, dev_text, vocab_index, test_text=None):
     # Parameters for the RNN language model
     vocab_size = len(vocab_index)
     embedding_dim = 32
     hidden_dim = 64
-    model = RNNLanguageModel(vocab_size, embedding_dim, hidden_dim, vocab_index, sos_token="<sos>")  # Add SOS token
+    model = RNNLanguageModel(vocab_size, embedding_dim, hidden_dim, vocab_index)
+
     # Optimizer used for training the model to minimize the loss
     optimizer = optim.Adam(model.parameters(), lr=0.001)
+    # # 1. Using SGD Optimizer
+    # optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+
+    # # 2. Using RMSprop Optimizer
+    # optimizer = optim.RMSprop(model.parameters(), lr=0.001, alpha=0.99, eps=1e-08)
+
     # Loss function used to calculate the loss between the predicted and target values
     criterion = nn.CrossEntropyLoss()
 
+    # SOS token handling (Add SOS token to the vocabulary)
+    if '<sos>' not in vocab_index.objs_to_ints:
+        vocab_index.add_and_get_index('<sos>')
+    sos_idx = vocab_index.index_of('<sos>')
+
+
     # Prepare training data
     # Convert the training text to indices using the vocabulary index
-    train_indices = [vocab_index.index_of("<sos>")] + [vocab_index.index_of(c) for c in train_text]  # Add <sos> at the beginning
+    train_indices = [vocab_index.index_of(c) for c in train_text]
+    # Uncomment to prepend SOS token
+    # --------------------------------------
+    # train_indices = [sos_idx] + train_indices
+    # --------------------------------------
     train_inputs = torch.tensor(train_indices[:-1], dtype=torch.long)
     train_targets = torch.tensor(train_indices[1:], dtype=torch.long)
 
     # Prepare validation data
     # Convert the development text to indices using the vocabulary index
-    dev_indices = [vocab_index.index_of("<sos>")] + [vocab_index.index_of(c) for c in dev_text]
+    dev_indices = [vocab_index.index_of(c) for c in dev_text]
+    # Uncomment to prepend SOS token
+    # --------------------------------------
+    # dev_indices = [sos_idx] + dev_indices
+    # --------------------------------------
     dev_inputs = torch.tensor(dev_indices[:-1], dtype=torch.long)
     dev_targets = torch.tensor(dev_indices[1:], dtype=torch.long)
 
@@ -191,7 +530,7 @@ def train_lm(args, train_text, dev_text, vocab_index, test_text=None):
             dev_loss_values.append(dev_loss.item())
 
             # Calculate perplexity
-            dev_log_prob = model.get_log_prob_sequence(dev_text, context="<sos>")  # Start with SOS token
+            dev_log_prob = model.get_log_prob_sequence(dev_text, context=" ")
             dev_perplexity = np.exp(-dev_log_prob / len(dev_text))
             dev_perplexities.append(dev_perplexity)
         print(f"Epoch {epoch + 1}/{num_epochs}, Validation Loss: {dev_loss.item():.4f}, Perplexity: {dev_perplexity:.4f}")
@@ -206,7 +545,9 @@ def train_lm(args, train_text, dev_text, vocab_index, test_text=None):
     plt.title('Training and Validation Loss Over Epochs')
     plt.legend()
     plt.grid(True)
-    plt.show()
+    save_path = r"D:\my\Academics\RGU\3rd yr\DL\CW\git\NLP-RNN_Classifier\test\loss\training_loss_plot.png"
+    plt.savefig(save_path)
+    plt.close()
 
     # Plotting the perplexity values
     plt.figure(figsize=(8, 5))
@@ -216,27 +557,29 @@ def train_lm(args, train_text, dev_text, vocab_index, test_text=None):
     plt.title('Validation Perplexity Over Epochs')
     plt.legend()
     plt.grid(True)
-    plt.show()
+    save_path = r"D:\my\Academics\RGU\3rd yr\DL\CW\git\NLP-RNN_Classifier\test\perplexity\training_loss_plot.png"
+    plt.savefig(save_path)
+    plt.close()
 
-    # Testing the model if test_text is provided
-    if test_text is not None:
-        test_indices = [vocab_index.index_of("<sos>")] + [vocab_index.index_of(c) for c in test_text]  # Add SOS token
-        test_inputs = torch.tensor(test_indices[:-1], dtype=torch.long)
-        test_targets = torch.tensor(test_indices[1:], dtype=torch.long)
+    # # Testing the model if test_text is provided
+    # if test_text is not None:
+    #     test_indices = [vocab_index.index_of(c) for c in test_text]
+    #     test_inputs = torch.tensor(test_indices[:-1], dtype=torch.long)
+    #     test_targets = torch.tensor(test_indices[1:], dtype=torch.long)
 
-        model.eval()
+    #     model.eval()
 
-        # Calculate loss and perplexity on the test set
-        with torch.no_grad():
-            # Unsqueeze to add batch dimension
-            outputs = model(test_inputs.unsqueeze(0))
-            # Calculate loss
-            test_loss = criterion(outputs.view(-1, vocab_size), test_targets)
-            test_log_prob = model.get_log_prob_sequence(test_text, context="<sos>")  # Start with SOS token
-            # Calculate perplexity
-            test_perplexity = np.exp(-test_log_prob / len(test_text))
-        print(f"Test Loss: {test_loss.item():.4f}, Test Perplexity: {test_perplexity:.4f}")
-    else:
-        print("No test data provided. Skipping testing phase.")
+    #     # Calculate loss and perplexity on the test set
+    #     with torch.no_grad():
+    #         # Unsqueeze to add batch dimension
+    #         outputs = model(test_inputs.unsqueeze(0))
+    #         # Calculate loss
+    #         test_loss = criterion(outputs.view(-1, vocab_size), test_targets)
+    #         test_log_prob = model.get_log_prob_sequence(test_text, context=" ")
+    #         # Calculate perplexity
+    #         test_perplexity = np.exp(-test_log_prob / len(test_text))
+    #     print(f"Test Loss: {test_loss.item():.4f}, Test Perplexity: {test_perplexity:.4f}")
+    # else:
+    #     print("No test data provided. Skipping testing phase.")
 
     return model
