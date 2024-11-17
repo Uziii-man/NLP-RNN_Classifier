@@ -80,257 +80,257 @@ def train_frequency_based_classifier(cons_exs, vowel_exs):
     return FrequencyBasedClassifier(consonant_counts, vowel_counts)
 
 
-def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index):
-    # Define hyperparameters/parameters
-    embedding_size = 40
-    hidden_size = 25
-    output_size = 2
-    batch_size = 16
-    learning_rate = 0.001
-    epochs = 10
-
-    print("Embedding Size:", embedding_size)
-    print("Hidden Size:", hidden_size)
-
-    # Initialising the model,loss functions as well as the optimiser. 
-    model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-    # Prepare training and dev data as tensors
-    train_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
-                  for ex in train_cons_exs] + \
-                 [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
-                  for ex in train_vowel_exs]
-
-    dev_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
-                for ex in dev_cons_exs] + \
-               [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
-                for ex in dev_vowel_exs]
-
-    # Function to create mini-batches
-    def create_batches(data, batch_size):
-        random.shuffle(data)  # Shuffle data for each epoch
-        batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
-        return batches
-    
-    train_losses = []
-    train_accuracies = []
-    dev_accuracies = []
-
-    # Training the model
-    for epoch in range(epochs):
-        model.train()
-        total_loss = 0
-        correct_train_predictions = 0
-
-        # Create mini-batches for training
-        train_batches = create_batches(train_data, batch_size)
-
-        for batch in train_batches:
-            # Extract sequences and labels
-            input_sequences = [item[0] for item in batch]  
-            labels = torch.stack([item[1] for item in batch])  
-            # Pad sequences to have the same length
-            input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
-
-            # Forward pass
-            # Zero the gradients used to update the weights
-            optimizer.zero_grad()
-            output = model(input_sequences)
-            loss = criterion(output, labels)
-
-            # Backward pass
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  
-            optimizer.step()
-
-            # Calculate loss and accuracy
-            total_loss += loss.item()
-            correct_train_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
-
-        avg_train_loss = total_loss / len(train_batches)
-        train_accuracy = correct_train_predictions / len(train_data) * 100
-
-        train_losses.append(avg_train_loss)
-        train_accuracies.append(train_accuracy)
-
-        # Evaluate on dev set
-        model.eval()
-        correct_dev_predictions = 0
-        dev_batches = create_batches(dev_data, batch_size)
-
-        # Calculate accuracy on dev set
-        with torch.no_grad():
-            for batch in dev_batches:
-                input_sequences = [item[0] for item in batch]
-                labels = torch.stack([item[1] for item in batch])
-                input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
-
-                output = model(input_sequences)
-                correct_dev_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
-
-        dev_accuracy = correct_dev_predictions / len(dev_data) * 100
-        dev_accuracies.append(dev_accuracy)
-        
-        print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_train_loss:.4f}, "
-              f"Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%")
-        
-
-    # Plot training loss
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1, epochs + 1), train_losses, label="Training Loss", marker="o")
-    plt.title("Training Loss Over Epochs")
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.grid(True)
-    plt.legend()
-    plt.show()
-
-    # Plot training and dev accuracy
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1, epochs + 1), train_accuracies, label="Training Accuracy", marker="o")
-    plt.plot(range(1, epochs + 1), dev_accuracies, label="Dev Accuracy", marker="o")
-    plt.title("Accuracy Over Epochs")
-    plt.xlabel("Epochs")
-    plt.ylabel("Accuracy (%)")
-    plt.grid(True)
-    plt.legend()
-    plt.show()
-
-    return model
-
-
-# 
-""" QUESTION 2 """
-# def train_rnn_classifier(
-#     args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index, max_context_length=20
-# ):
+# def train_rnn_classifier(args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index):
+#     # Define hyperparameters/parameters
 #     embedding_size = 40
 #     hidden_size = 25
 #     output_size = 2
-#     batch_size = 32
+#     batch_size = 16
 #     learning_rate = 0.001
-#     epochs = 15
+#     epochs = 10
 
 #     print("Embedding Size:", embedding_size)
 #     print("Hidden Size:", hidden_size)
 
-#     # To store accuracy for each context length
-#     context_results = {}
+#     # Initialising the model,loss functions as well as the optimiser. 
+#     model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
+#     criterion = nn.CrossEntropyLoss()
+#     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-#     for context_length in range(1, max_context_length + 1):
-#         print(f"\nEvaluating context length: {context_length}")
-        
-#         model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
-#         criterion = nn.CrossEntropyLoss()
-#         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+#     # Prepare training and dev data as tensors
+#     train_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
+#                   for ex in train_cons_exs] + \
+#                  [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
+#                   for ex in train_vowel_exs]
 
-#         # Prepare training and dev data with truncated context
-#         train_data = [
-#             (
-#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
-#                 torch.tensor(0),
-#             )
-#             for ex in train_cons_exs
-#         ] + [
-#             (
-#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
-#                 torch.tensor(1),
-#             )
-#             for ex in train_vowel_exs
-#         ]
+#     dev_data = [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(0)) 
+#                 for ex in dev_cons_exs] + \
+#                [(torch.tensor([vocab_index.index_of(char) for char in ex], dtype=torch.long), torch.tensor(1)) 
+#                 for ex in dev_vowel_exs]
 
-#         dev_data = [
-#             (
-#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
-#                 torch.tensor(0),
-#             )
-#             for ex in dev_cons_exs
-#         ] + [
-#             (
-#                 torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
-#                 torch.tensor(1),
-#             )
-#             for ex in dev_vowel_exs
-#         ]
+#     # Function to create mini-batches
+#     def create_batches(data, batch_size):
+#         random.shuffle(data)  # Shuffle data for each epoch
+#         batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+#         return batches
+    
+#     train_losses = []
+#     train_accuracies = []
+#     dev_accuracies = []
 
-#         # Function to create mini-batches
-#         def create_batches(data, batch_size):
-#             random.shuffle(data)  # Shuffle data for each epoch
-#             return [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
+#     # Training the model
+#     for epoch in range(epochs):
+#         model.train()
+#         total_loss = 0
+#         correct_train_predictions = 0
 
-#         for epoch in range(epochs):
-#             model.train()
-#             total_loss = 0
-#             correct_train_predictions = 0
+#         # Create mini-batches for training
+#         train_batches = create_batches(train_data, batch_size)
 
-#             # Create mini-batches for training
-#             train_batches = create_batches(train_data, batch_size)
+#         for batch in train_batches:
+#             # Extract sequences and labels
+#             input_sequences = [item[0] for item in batch]  
+#             labels = torch.stack([item[1] for item in batch])  
+#             # Pad sequences to have the same length
+#             input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
 
-#             for batch in train_batches:
-#                 input_sequences = [item[0] for item in batch]  # Extract sequences
-#                 labels = torch.stack([item[1] for item in batch])  # Extract labels and stack them
-#                 input_sequences = torch.nn.utils.rnn.pad_sequence(
-#                     input_sequences, batch_first=True, padding_value=0
-#                 )  # Pad sequences
+#             # Forward pass
+#             # Zero the gradients used to update the weights
+#             optimizer.zero_grad()
+#             output = model(input_sequences)
+#             loss = criterion(output, labels)
 
-#                 optimizer.zero_grad()
-#                 output = model(input_sequences)
-#                 loss = criterion(output, labels)
-#                 loss.backward()
-#                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
-#                 optimizer.step()
+#             # Backward pass
+#             loss.backward()
+#             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  
+#             optimizer.step()
 
-#                 total_loss += loss.item()
-#                 correct_train_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+#             # Calculate loss and accuracy
+#             total_loss += loss.item()
+#             correct_train_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
 
+#         avg_train_loss = total_loss / len(train_batches)
 #         train_accuracy = correct_train_predictions / len(train_data) * 100
+
+#         train_losses.append(avg_train_loss)
+#         train_accuracies.append(train_accuracy)
 
 #         # Evaluate on dev set
 #         model.eval()
 #         correct_dev_predictions = 0
 #         dev_batches = create_batches(dev_data, batch_size)
 
+#         # Calculate accuracy on dev set
 #         with torch.no_grad():
 #             for batch in dev_batches:
 #                 input_sequences = [item[0] for item in batch]
 #                 labels = torch.stack([item[1] for item in batch])
-#                 input_sequences = torch.nn.utils.rnn.pad_sequence(
-#                     input_sequences, batch_first=True, padding_value=0
-#                 )  # Pad sequences
+#                 input_sequences = torch.nn.utils.rnn.pad_sequence(input_sequences, batch_first=True, padding_value=0)  # Pad sequences
 
 #                 output = model(input_sequences)
 #                 correct_dev_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
 
 #         dev_accuracy = correct_dev_predictions / len(dev_data) * 100
-#         print(
-#             f"Context Length: {context_length}, Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%"
-#         )
+#         dev_accuracies.append(dev_accuracy)
+        
+#         print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_train_loss:.4f}, "
+#               f"Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%")
+        
 
-#         # Store results for the context length
-#         context_results[context_length] = {
-#             "train_accuracy": train_accuracy,
-#             "dev_accuracy": dev_accuracy,
-#         }
-
-#     # Plot the results
-#     context_lengths = list(context_results.keys())
-#     train_accuracies = [context_results[cl]["train_accuracy"] for cl in context_lengths]
-#     dev_accuracies = [context_results[cl]["dev_accuracy"] for cl in context_lengths]
-
+#     # Plot training loss
 #     plt.figure(figsize=(10, 6))
-#     plt.plot(context_lengths, train_accuracies, label="Train Accuracy", marker="o")
-#     plt.plot(context_lengths, dev_accuracies, label="Dev Accuracy", marker="o")
-#     plt.title("Accuracy vs. Context Length")
-#     plt.xlabel("Context Length")
-#     plt.ylabel("Accuracy (%)")
-#     plt.legend()
+#     plt.plot(range(1, epochs + 1), train_losses, label="Training Loss", marker="o")
+#     plt.title("Training Loss Over Epochs")
+#     plt.xlabel("Epochs")
+#     plt.ylabel("Loss")
 #     plt.grid(True)
+#     plt.legend()
 #     plt.show()
 
-#     # Return the trained model (for the last context length) and context results
-#     return model, context_results
+#     # Plot training and dev accuracy
+#     plt.figure(figsize=(10, 6))
+#     plt.plot(range(1, epochs + 1), train_accuracies, label="Training Accuracy", marker="o")
+#     plt.plot(range(1, epochs + 1), dev_accuracies, label="Dev Accuracy", marker="o")
+#     plt.title("Accuracy Over Epochs")
+#     plt.xlabel("Epochs")
+#     plt.ylabel("Accuracy (%)")
+#     plt.grid(True)
+#     plt.legend()
+#     plt.show()
+
+#     return model
+
+
+# 
+""" QUESTION 2 """
+def train_rnn_classifier(
+    args, train_cons_exs, train_vowel_exs, dev_cons_exs, dev_vowel_exs, vocab_index, max_context_length=20
+):
+    embedding_size = 40
+    hidden_size = 25
+    output_size = 2
+    batch_size = 32
+    learning_rate = 0.001
+    epochs = 15
+
+    print("Embedding Size:", embedding_size)
+    print("Hidden Size:", hidden_size)
+
+    # To store accuracy for each context length
+    context_results = {}
+
+    for context_length in range(1, max_context_length + 1):
+        print(f"\nEvaluating context length: {context_length}")
+        
+        model = RNNClassifier(vocab_index, embedding_size, hidden_size, output_size)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+        # Prepare training and dev data with truncated context
+        train_data = [
+            (
+                torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+                torch.tensor(0),
+            )
+            for ex in train_cons_exs
+        ] + [
+            (
+                torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+                torch.tensor(1),
+            )
+            for ex in train_vowel_exs
+        ]
+
+        dev_data = [
+            (
+                torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+                torch.tensor(0),
+            )
+            for ex in dev_cons_exs
+        ] + [
+            (
+                torch.tensor([vocab_index.index_of(char) for char in ex[:context_length]], dtype=torch.long),
+                torch.tensor(1),
+            )
+            for ex in dev_vowel_exs
+        ]
+
+        # Function to create mini-batches
+        def create_batches(data, batch_size):
+            random.shuffle(data)  # Shuffle data for each epoch
+            return [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
+
+        for epoch in range(epochs):
+            model.train()
+            total_loss = 0
+            correct_train_predictions = 0
+
+            # Create mini-batches for training
+            train_batches = create_batches(train_data, batch_size)
+
+            for batch in train_batches:
+                input_sequences = [item[0] for item in batch]  # Extract sequences
+                labels = torch.stack([item[1] for item in batch])  # Extract labels and stack them
+                input_sequences = torch.nn.utils.rnn.pad_sequence(
+                    input_sequences, batch_first=True, padding_value=0
+                )  # Pad sequences
+
+                optimizer.zero_grad()
+                output = model(input_sequences)
+                loss = criterion(output, labels)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
+                optimizer.step()
+
+                total_loss += loss.item()
+                correct_train_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+        train_accuracy = correct_train_predictions / len(train_data) * 100
+
+        # Evaluate on dev set
+        model.eval()
+        correct_dev_predictions = 0
+        dev_batches = create_batches(dev_data, batch_size)
+
+        with torch.no_grad():
+            for batch in dev_batches:
+                input_sequences = [item[0] for item in batch]
+                labels = torch.stack([item[1] for item in batch])
+                input_sequences = torch.nn.utils.rnn.pad_sequence(
+                    input_sequences, batch_first=True, padding_value=0
+                )  # Pad sequences
+
+                output = model(input_sequences)
+                correct_dev_predictions += (torch.argmax(output, dim=1) == labels).sum().item()
+
+        dev_accuracy = correct_dev_predictions / len(dev_data) * 100
+        print(
+            f"Context Length: {context_length}, Train Accuracy: {train_accuracy:.2f}%, Dev Accuracy: {dev_accuracy:.2f}%"
+        )
+
+        # Store results for the context length
+        context_results[context_length] = {
+            "train_accuracy": train_accuracy,
+            "dev_accuracy": dev_accuracy,
+        }
+
+    # Plot the results
+    context_lengths = list(context_results.keys())
+    train_accuracies = [context_results[cl]["train_accuracy"] for cl in context_lengths]
+    dev_accuracies = [context_results[cl]["dev_accuracy"] for cl in context_lengths]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(context_lengths, train_accuracies, label="Train Accuracy", marker="o")
+    plt.plot(context_lengths, dev_accuracies, label="Dev Accuracy", marker="o")
+    plt.title("Accuracy vs. Context Length")
+    plt.xlabel("Context Length")
+    plt.ylabel("Accuracy (%)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    # Return the trained model (for the last context length) and context results
+    return model, context_results
 
 
 
